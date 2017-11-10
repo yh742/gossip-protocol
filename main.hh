@@ -17,11 +17,12 @@ public:
     // Bind this socket to a P2Papp-specific default port.
     bool bind();
     void writeUdp(const QVariantMap &map);
-    void readUdp(QByteArray &rBytes, QVariantMap *map);
+    void readUdp(QVariantMap *map);
     ~NetSocket();
 
 private:
     int myPortMin, myPortMax;
+    quint16 mPort;
     QHostAddress *mHostAddress;
 };
 

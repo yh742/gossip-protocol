@@ -48,11 +48,21 @@ ChatDialog::ChatDialog()
     connect(mSocket, SIGNAL(readyRead()), this, SLOT(gotReadyRead()));
 }
 
+// Slot for receiving messages
 void ChatDialog::gotReadyRead()
 {
-    qDebug() << "Got Messages";
+    QVariantMap qMap;
+    mSocket->readUdp(&qMap);
+    QVariantMap::iterator i;
+    for (i = qMap.begin(); i != qMap.end(); ++i)
+    {
+        qDebug() << i.key() << ", " << i.value().toString();
+        QString oStr = i.key() + "," + i.value().toString();
+        textview->append(oStr);
+    }
 }
 
+// Slot for enter messages
 void ChatDialog::gotReturnPressed()
 {
 	// Initially, just echo the string locally.
@@ -61,7 +71,10 @@ void ChatDialog::gotReturnPressed()
 	textview->append(textline->text());
 
 	// Clear the textline to get ready for the next input message.
-	textline->clear();
+    QVariantMap qMap;
+    qMap["ChatText"] = textline->text();
+    mSocket->writeUdp(qMap);
+    textline->clear();
 }
 
 NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
@@ -92,6 +105,7 @@ bool NetSocket::bind()
 	for (int p = myPortMin; p <= myPortMax; p++) {
 		if (QUdpSocket::bind(p)) {
 			qDebug() << "bound to UDP port " << p;
+            mPort = p;
 			return true;
 		}
 	}
@@ -118,11 +132,15 @@ void NetSocket::writeUdp(const QVariantMap &map)
 
 // Deserialize and read from UDP socket
 // @param map - pointer to map to store data
-void NetSocket::readUdp(QByteArray &rBytes, QVariantMap* map)
+void NetSocket::readUdp(QVariantMap* map)
 {
-    QDataStream in(&rBytes, QIODevice::ReadOnly);
-    in.setVersion(QDataStream::Qt_4_8);
-    in >> (*map);
+    //while(this->hasPendingDatagrams())
+    //{
+    QByteArray buf(this->pendingDatagramSize(), Qt::Uninitialized);
+    QDataStream str(&buf, QIODevice::ReadOnly);
+    this->readDatagram(buf.data(), buf.size(), this->mHostAddress, &(this->mPort));
+    str >> (*map);
+    //}
 }
 
 
