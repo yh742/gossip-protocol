@@ -4,6 +4,8 @@
 #include <QVBoxLayout>
 #include <QApplication>
 #include <QDebug>
+#include <QHostAddress>
+#include <QtGlobal>
 
 #include "main.hh"
 
@@ -36,6 +38,19 @@ ChatDialog::ChatDialog()
 	// so that we can send the message entered by the user.
 	connect(textline, SIGNAL(returnPressed()),
 		this, SLOT(gotReturnPressed()));
+
+    // User code starts here
+    // Make sure Dialog has access to socket
+    mSocket = new NetSocket(this);
+    if (!mSocket->bind())
+        exit(1);
+
+    connect(mSocket, SIGNAL(readyRead()), this, SLOT(gotReadyRead()));
+}
+
+void ChatDialog::gotReadyRead()
+{
+    qDebug() << "Got Messages";
 }
 
 void ChatDialog::gotReturnPressed()
@@ -49,7 +64,7 @@ void ChatDialog::gotReturnPressed()
 	textline->clear();
 }
 
-NetSocket::NetSocket()
+NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
 {
 	// Pick a range of four UDP ports to try to allocate by default,
 	// computed based on my Unix user ID.
@@ -60,6 +75,15 @@ NetSocket::NetSocket()
 	// We use the range from 32768 to 49151 for this purpose.
 	myPortMin = 32768 + (getuid() % 4096)*4;
 	myPortMax = myPortMin + 3;
+
+    // Get host address
+    mHostAddress = new QHostAddress(QHostAddress::LocalHost);
+    qDebug() << mHostAddress->toString();
+}
+
+NetSocket::~NetSocket()
+{
+    delete mHostAddress;
 }
 
 bool NetSocket::bind()
@@ -77,19 +101,44 @@ bool NetSocket::bind()
 	return false;
 }
 
+// Serializes and writes to UDP socket
+// @param map - readonly ref to map to be written
+void NetSocket::writeUdp(const QVariantMap &map)
+{
+    QByteArray wBytes;
+    QDataStream out(&wBytes, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_4_8);
+    out << map;
+    for (int i = myPortMin; i <= myPortMax; i++)
+    {
+        this->writeDatagram(wBytes, *mHostAddress, i);
+    }
+}
+
+
+// Deserialize and read from UDP socket
+// @param map - pointer to map to store data
+void NetSocket::readUdp(QByteArray &rBytes, QVariantMap* map)
+{
+    QDataStream in(&rBytes, QIODevice::ReadOnly);
+    in.setVersion(QDataStream::Qt_4_8);
+    in >> (*map);
+}
+
+
 int main(int argc, char **argv)
 {
 	// Initialize Qt toolkit
 	QApplication app(argc,argv);
 
-	// Create an initial chat dialog window
-	ChatDialog dialog;
-	dialog.show();
+    // Create a UDP network socket
+    //NetSocket sock;
+    //if (!sock.bind())
+    //    exit(1);
 
-	// Create a UDP network socket
-	NetSocket sock;
-	if (!sock.bind())
-		exit(1);
+	// Create an initial chat dialog window
+    ChatDialog dialog;
+    dialog.show();
 
 	// Enter the Qt main loop; everything else is event driven
 	return app.exec();
