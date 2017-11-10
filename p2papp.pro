@@ -11,3 +11,6 @@ QT += network
 # Input
 HEADERS += main.hh
 SOURCES += main.cc
+
+DISTFILES += \
+    Documentation

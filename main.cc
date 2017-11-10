@@ -1,11 +1,12 @@
 
 #include <unistd.h>
-
+#include <QHostInfo>
 #include <QVBoxLayout>
 #include <QApplication>
 #include <QDebug>
 #include <QHostAddress>
 #include <QtGlobal>
+#include <QDateTime>
 
 #include "main.hh"
 
@@ -90,13 +91,17 @@ NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
 	myPortMax = myPortMin + 3;
 
     // Get host address
-    mHostAddress = new QHostAddress(QHostAddress::LocalHost);
-    qDebug() << mHostAddress->toString();
+    QHostInfo info;
+    QDateTime current = QDateTime::currentDateTime();
+    uint msecs = current.toTime_t();
+    qsrand(msecs);
+    mOriginName = info.localHostName() + "-" + QString::number(qrand());
+    qDebug() << originName;
 }
 
 NetSocket::~NetSocket()
 {
-    delete mHostAddress;
+    //delete mHostAddress;
 }
 
 bool NetSocket::bind()

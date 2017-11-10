@@ -23,7 +23,8 @@ public:
 private:
     int myPortMin, myPortMax;
     quint16 mPort;
-    QHostAddress *mHostAddress;
+    //QHostAddress *mHostAddress;
+    QString mOriginName;
 };
 
 class ChatDialog : public QDialog
