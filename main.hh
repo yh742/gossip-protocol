@@ -13,18 +13,19 @@ class NetSocket : public QUdpSocket
 
 public:
     NetSocket(QObject *parent);
-
+    QString mOriginName;
     // Bind this socket to a P2Papp-specific default port.
     bool bind();
-    void writeUdp(const QVariantMap &map);
+    void writeUdp(const QVariantMap &map, int index);
     void readUdp(QVariantMap *map);
+    int genRandNum();
     ~NetSocket();
 
 private:
     int myPortMin, myPortMax;
     quint16 mPort;
-    //QHostAddress *mHostAddress;
-    QString mOriginName;
+    QHostAddress mHostAddress;
+    QVector<int> mPeerPorts;
 };
 
 class ChatDialog : public QDialog
@@ -42,6 +43,9 @@ private:
 	QTextEdit *textview;
 	QLineEdit *textline;
     NetSocket *mSocket;
+    QMap<QString, QMap<quint32, QString> > mMessageList;
+    QMap<QString, quint32> mLocalWants;
+    void writeRumor(QString &origin, int seqNo, const QString &text);
 };
 
 

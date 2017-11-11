@@ -45,7 +45,7 @@ ChatDialog::ChatDialog()
     mSocket = new NetSocket(this);
     if (!mSocket->bind())
         exit(1);
-
+    mLocalWants.insert(mSocket->mOriginName, 0);
     connect(mSocket, SIGNAL(readyRead()), this, SLOT(gotReadyRead()));
 }
 
@@ -63,6 +63,31 @@ void ChatDialog::gotReadyRead()
     }
 }
 
+void ChatDialog::writeRumor(QString &origin, int seqNo, const QString &text)
+{
+    QVariantMap qMap;
+    qMap["ChatText"] = text;
+    qMap["Origin"] = origin;
+    qMap["SeqNo"] = seqNo;
+    // Update tracking variables
+    if (mMessageList.contains(origin))
+    {
+        if (!mMessageList[origin].contains(seqNo))
+        {
+            // Only add to messagelist if it hasn't been written
+            mMessageList[origin].insert(seqNo, text);
+        }
+    }
+    else
+    {
+        QMap<quint32, QString> tMap;
+        tMap.insert(seqNo, text);
+        mMessageList.insert(origin, tMap);
+    }
+    int index = (mSocket->genRandNum()) % 2;
+    mSocket->writeUdp(qMap, index);
+}
+
 // Slot for enter messages
 void ChatDialog::gotReturnPressed()
 {
@@ -71,11 +96,20 @@ void ChatDialog::gotReturnPressed()
 	qDebug() << "FIX: send message to other peers: " << textline->text();
 	textview->append(textline->text());
 
-	// Clear the textline to get ready for the next input message.
-    QVariantMap qMap;
-    qMap["ChatText"] = textline->text();
-    mSocket->writeUdp(qMap);
+    // Spread user enetered rumors
+    writeRumor(mSocket->mOriginName, mLocalWants[mSocket->mOriginName], textline->text());
+    mLocalWants[mSocket->mOriginName]++;
+
+    // Clear the textline to get ready for the next input message.
     textline->clear();
+}
+
+int NetSocket::genRandNum()
+{
+    QDateTime current = QDateTime::currentDateTime();
+    uint msecs = current.toTime_t();
+    qsrand(msecs);
+    return qrand();
 }
 
 NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
@@ -91,12 +125,11 @@ NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
 	myPortMax = myPortMin + 3;
 
     // Get host address
+    mHostAddress = QHostAddress(QHostAddress::LocalHost);
+    qDebug() << mHostAddress.toString();
     QHostInfo info;
-    QDateTime current = QDateTime::currentDateTime();
-    uint msecs = current.toTime_t();
-    qsrand(msecs);
-    mOriginName = info.localHostName() + "-" + QString::number(qrand());
-    qDebug() << originName;
+    mOriginName = info.localHostName() + "-" + QString::number(genRandNum());
+    qDebug() << mOriginName;
 }
 
 NetSocket::~NetSocket()
@@ -109,8 +142,25 @@ bool NetSocket::bind()
 	// Try to bind to each of the range myPortMin..myPortMax in turn.
 	for (int p = myPortMin; p <= myPortMax; p++) {
 		if (QUdpSocket::bind(p)) {
+            if (p == myPortMin)
+            {
+                mPeerPorts.append(p + 1);
+            }
+            else if (p == myPortMax)
+            {
+                mPeerPorts.append(p - 1);
+            }
+            else
+            {
+                mPeerPorts.append(p - 1);
+                mPeerPorts.append(p + 1);
+            }
 			qDebug() << "bound to UDP port " << p;
             mPort = p;
+            for (int i = 0; i < mPeerPorts.size(); i++)
+            {
+                qDebug() << "Peer Port: " << mPeerPorts[i];
+            }
 			return true;
 		}
 	}
@@ -122,15 +172,19 @@ bool NetSocket::bind()
 
 // Serializes and writes to UDP socket
 // @param map - readonly ref to map to be written
-void NetSocket::writeUdp(const QVariantMap &map)
+void NetSocket::writeUdp(const QVariantMap &map, int index)
 {
     QByteArray wBytes;
     QDataStream out(&wBytes, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_4_8);
     out << map;
-    for (int i = myPortMin; i <= myPortMax; i++)
+    if (mPeerPorts.size() == 1)
     {
-        this->writeDatagram(wBytes, *mHostAddress, i);
+        this->writeDatagram(wBytes, mHostAddress, mPeerPorts[0]);
+    }
+    else
+    {
+        this->writeDatagram(wBytes, mHostAddress, mPeerPorts[index]);
     }
 }
 
@@ -143,7 +197,7 @@ void NetSocket::readUdp(QVariantMap* map)
     //{
     QByteArray buf(this->pendingDatagramSize(), Qt::Uninitialized);
     QDataStream str(&buf, QIODevice::ReadOnly);
-    this->readDatagram(buf.data(), buf.size(), this->mHostAddress, &(this->mPort));
+    this->readDatagram(buf.data(), buf.size(), &(this->mHostAddress), &(this->mPort));
     str >> (*map);
     //}
 }

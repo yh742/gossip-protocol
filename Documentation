@@ -1,3 +1,11 @@
+Case 1: Enter new chat from user
+    - pick random neighbor to send to
+
+    - waits for status message
+                OR
+    - timeout and resend
+
+
 2.1.5.  Message-ID
 
     The "Message-ID" line gives the message a unique identifier.  The
