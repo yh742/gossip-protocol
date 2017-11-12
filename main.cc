@@ -9,6 +9,8 @@
 #include <QDateTime>
 
 #include "main.hh"
+typedef QMap<QString,quint32> QIntMap;
+Q_DECLARE_METATYPE(QIntMap);
 
 ChatDialog::ChatDialog()
 {
@@ -35,57 +37,240 @@ ChatDialog::ChatDialog()
 	layout->addWidget(textline);
 	setLayout(layout);
 
-	// Register a callback on the textline's returnPressed signal
-	// so that we can send the message entered by the user.
-	connect(textline, SIGNAL(returnPressed()),
-		this, SLOT(gotReturnPressed()));
-
     // User code starts here
     // Make sure Dialog has access to socket
     mSocket = new NetSocket(this);
     if (!mSocket->bind())
         exit(1);
-    mLocalWants.insert(mSocket->mOriginName, 0);
-    connect(mSocket, SIGNAL(readyRead()), this, SLOT(gotReadyRead()));
+
+    // initialize timers
+    mTimeoutTimer = new QTimer(this);
+    mEntropyTimer = new QTimer(this);
+    mEntropyTimer->start(10 * 1000);
+
+    // attached SIGNALS to SLOTS
+    // Timer based events
+    connect(mTimeoutTimer, SIGNAL(timeout()),
+            this, SLOT(timeoutHandler()));
+    connect(mEntropyTimer, SIGNAL(timeout()),
+            this, SLOT(antiEntropyHandler()));
+
+    // Input and output based events
+    connect(textline, SIGNAL(returnPressed()),
+            this, SLOT(gotReturnPressed()));
+    connect(mSocket, SIGNAL(readyRead()),
+            this, SLOT(gotReadyRead()));
+}
+
+// if timer fires, send out status message
+void ChatDialog::antiEntropyHandler()
+{
+    qDebug() << "AntiEntropyHandler called";
+    writeStatus(mSocket->getWritePort());
+    mEntropyTimer->start(10 * 1000);
+}
+
+// if timer fires, resend last message
+void ChatDialog::timeoutHandler()
+{
+    qDebug() << "TimeoutHandler called";
+    mSocket->writeUdp(mLastMsg, mSocket->sendPort);
+    mTimeoutTimer->start(1000);
 }
 
 // Slot for receiving messages
 void ChatDialog::gotReadyRead()
 {
     QVariantMap qMap;
-    mSocket->readUdp(&qMap);
-    QVariantMap::iterator i;
-    for (i = qMap.begin(); i != qMap.end(); ++i)
+    bool pending = false;
+    do
     {
-        qDebug() << i.key() << ", " << i.value().toString();
-        QString oStr = i.key() + "," + i.value().toString();
-        textview->append(oStr);
+        pending = mSocket->readUdp(&qMap);
+        processMessages(qMap);
+    }
+    while(pending);
+}
+
+void ChatDialog::processMessages(QVariantMap &qMap)
+{
+    if (qMap.contains("Want"))
+    {
+        qDebug() << "Received a status message";
+        processStatus(qMap);
+    }
+    else if(qMap.contains("ChatText"))
+    {
+        qDebug() << "Received a rumor message";
+        processRumor(qMap);
+    }
+    else
+    {
+        qDebug() << "Datagram contains neither messages";
     }
 }
 
-void ChatDialog::writeRumor(QString &origin, int seqNo, const QString &text)
+void ChatDialog::processRumor(QVariantMap &rMap)
+{
+    QString origin = rMap["Origin"].toString();
+    quint32 seqNo = rMap["SeqNo"].toInt();
+    QString text = rMap["ChatText"].toString();
+
+    // Only process message that doesn't belong to us
+    if (origin != mSocket->mOriginName)
+    {
+        if (mLocalWants.contains(origin))
+        {
+            // Only append if it is the seqNo we want
+            if (seqNo == mLocalWants[origin])
+            {
+                appendToMessageList(rMap);
+                writeRumor(origin, seqNo, text);
+                mLocalWants[origin]++;
+            }
+        }
+        else
+        {
+            // Insert new host address to map
+            mLocalWants.insert(origin, seqNo + 1);
+            appendToMessageList(rMap);
+            writeRumor(origin, seqNo, text);
+        }
+    }
+
+    //mTimeoutTimer->stop();
+    writeStatus(mSocket->recvPort);
+}
+
+void ChatDialog::processStatus(QVariantMap &sMap)
+{
+    QVariantMap rumorMsg;
+    QMap<QString, quint32> remStat = sMap["Wants"].value<QMap<QString, quint32> >();
+    qDebug() << remStat;
+    qDebug() << mLocalWants;
+
+    // use statusFlag to determin if:
+    // 0 - okay
+    // 1 - local has more msgs
+    // 2 - remote has more msgs
+    int statusFlag = 0;
+
+    // Loop through localwants to see if there is anything missing
+    QMap<QString, quint32>::const_iterator iter = mLocalWants.constBegin();
+    for (; iter != mLocalWants.constEnd(); iter++)
+    {
+        if (!remStat.contains(iter.key()))
+        {
+            qDebug() << "mLocalWants has keys remote doesn't";
+            statusFlag = 1;
+            rumorMsg["Origin"] = iter.key();
+            rumorMsg["SeqNo"] = 0;
+            rumorMsg["ChatText"] = mMessageList[iter.key()][0];
+            break;
+        }
+        else if (remStat[iter.key()] < mLocalWants[iter.key()])
+        {
+            qDebug() << "mLocalWant's sequence number is ahead";
+            statusFlag = 1;
+            rumorMsg["Origin"] = iter.key();
+            rumorMsg["SeqNo"] = remStat[iter.key()];
+            rumorMsg["ChatText"] = mMessageList[iter.key()][remStat[iter.key()]];
+            break;
+        }
+        else if (remStat[iter.key()] > mLocalWants[iter.key()])
+        {
+            qDebug() << "mLocalWant's sequence number is behind";
+            statusFlag = 2;
+            break;
+        }
+    }
+
+    // Only look for difference if none have been found
+    if (statusFlag == 0)
+    {
+        iter = remStat.constBegin();
+        for (; iter != remStat.constEnd(); iter++)
+        {
+            if (!mLocalWants.contains(iter.key()))
+            {
+                qDebug() << "remote has keys mLocalWants doesn;t";
+                statusFlag = 2;
+                break;
+            }
+        }
+    }
+
+    // Process results
+    switch (statusFlag)
+    {
+        // If status is in sync, 50% to spread rumor
+        case 0:
+            qDebug() << "Status messages are in sync";
+            if (mSocket->genRandNum() % 2 == 0)
+            {
+                QString origin = mLastMsg["Origin"].toString();
+                int seqNo = mLastMsg["SeqNo"].toInt();
+                QString text = mLastMsg["ChatText"].toString();
+                writeRumor(origin, seqNo, text);
+            }
+            break;
+        // If status is ahead of remote
+        case 1:
+            qDebug() << "Status mesage is ahead";
+            mSocket->writeUdp(rumorMsg, mSocket->recvPort);
+            break;
+        // If status is behind remote
+        case 2:
+            qDebug() << "Status message is behind";
+            writeStatus(mSocket->recvPort);
+            break;
+    }
+}
+
+void ChatDialog::appendToMessageList(QVariantMap &qMap)
+{
+    QString origin = qMap["Origin"].toString();
+    quint32 seqNo = qMap["SeqNo"].toInt();
+    QString text = qMap["ChatText"].toString();
+    if (mMessageList.contains(origin))
+    {
+        // host exists in message list already
+        if (!mMessageList[origin].contains(seqNo))
+        {
+            // Only update values if it is new
+            mMessageList[origin].insert(seqNo, text);
+        }
+    }
+    else
+    {
+        // host doesn't exist in message list, add
+        QMap<quint32, QString> tMap;
+        tMap.insert(seqNo, text);
+        mMessageList.insert(origin, tMap);
+    }
+}
+
+void ChatDialog::writeStatus(int port)
+{
+    QVariantMap sMap;
+    QVariant var;
+    var.setValue(mLocalWants);
+    sMap["Want"] =  var;
+    mSocket->writeUdp(sMap, port);
+    //mTimeoutTimer->start(1000);
+}
+
+void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text)
 {
     QVariantMap qMap;
     qMap["ChatText"] = text;
     qMap["Origin"] = origin;
     qMap["SeqNo"] = seqNo;
     // Update tracking variables
-    if (mMessageList.contains(origin))
-    {
-        if (!mMessageList[origin].contains(seqNo))
-        {
-            // Only add to messagelist if it hasn't been written
-            mMessageList[origin].insert(seqNo, text);
-        }
-    }
-    else
-    {
-        QMap<quint32, QString> tMap;
-        tMap.insert(seqNo, text);
-        mMessageList.insert(origin, tMap);
-    }
-    int index = (mSocket->genRandNum()) % 2;
-    mSocket->writeUdp(qMap, index);
+    appendToMessageList(qMap);
+    int port = mSocket->getWritePort();
+    mSocket->writeUdp(qMap, port);
+    mTimeoutTimer->start(1000);
+    mLastMsg = QVariantMap(qMap);
 }
 
 // Slot for enter messages
@@ -97,11 +282,25 @@ void ChatDialog::gotReturnPressed()
 	textview->append(textline->text());
 
     // Spread user enetered rumors
-    writeRumor(mSocket->mOriginName, mLocalWants[mSocket->mOriginName], textline->text());
+    QString origin = mSocket->mOriginName;
+    int seqNo = mLocalWants[mSocket->mOriginName];
+    QString text = textline->text();
+    writeRumor(origin, seqNo, text);
     mLocalWants[mSocket->mOriginName]++;
 
     // Clear the textline to get ready for the next input message.
     textline->clear();
+}
+
+int NetSocket::getWritePort()
+{
+    // Determine which port to send to
+    sendPort = myPort == myPortMin ? myPort + 1 :
+        myPort == myPortMax ? myPort - 1 :
+        (genRandNum() % 2) == 0 ? myPort + 1:
+        myPort - 1;
+    qDebug() << "Sending Port: " << QString::number(sendPort);
+    return sendPort;
 }
 
 int NetSocket::genRandNum()
@@ -142,25 +341,8 @@ bool NetSocket::bind()
 	// Try to bind to each of the range myPortMin..myPortMax in turn.
 	for (int p = myPortMin; p <= myPortMax; p++) {
 		if (QUdpSocket::bind(p)) {
-            if (p == myPortMin)
-            {
-                mPeerPorts.append(p + 1);
-            }
-            else if (p == myPortMax)
-            {
-                mPeerPorts.append(p - 1);
-            }
-            else
-            {
-                mPeerPorts.append(p - 1);
-                mPeerPorts.append(p + 1);
-            }
 			qDebug() << "bound to UDP port " << p;
-            mPort = p;
-            for (int i = 0; i < mPeerPorts.size(); i++)
-            {
-                qDebug() << "Peer Port: " << mPeerPorts[i];
-            }
+            myPort = p;
 			return true;
 		}
 	}
@@ -172,36 +354,37 @@ bool NetSocket::bind()
 
 // Serializes and writes to UDP socket
 // @param map - readonly ref to map to be written
-void NetSocket::writeUdp(const QVariantMap &map, int index)
+void NetSocket::writeUdp(const QVariantMap &map, int port)
 {
     QByteArray wBytes;
     QDataStream out(&wBytes, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_4_8);
     out << map;
-    if (mPeerPorts.size() == 1)
-    {
-        this->writeDatagram(wBytes, mHostAddress, mPeerPorts[0]);
-    }
-    else
-    {
-        this->writeDatagram(wBytes, mHostAddress, mPeerPorts[index]);
-    }
+    this->writeDatagram(wBytes, mHostAddress, port);
 }
 
 
 // Deserialize and read from UDP socket
 // @param map - pointer to map to store data
-void NetSocket::readUdp(QVariantMap* map)
+// @return bool - if there is more datagrams to read
+bool NetSocket::readUdp(QVariantMap* map)
 {
-    //while(this->hasPendingDatagrams())
-    //{
     QByteArray buf(this->pendingDatagramSize(), Qt::Uninitialized);
     QDataStream str(&buf, QIODevice::ReadOnly);
-    this->readDatagram(buf.data(), buf.size(), &(this->mHostAddress), &(this->mPort));
+    QHostAddress sendingAddr;
+    quint16 temPort;
+    readDatagram(buf.data(), buf.size(), &sendingAddr, &temPort);
+    recvPort = temPort;
     str >> (*map);
-    //}
+    if (this->hasPendingDatagrams())
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
-
 
 int main(int argc, char **argv)
 {
