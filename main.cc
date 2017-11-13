@@ -138,6 +138,7 @@ void ChatDialog::processRumor(QVariantMap &rMap)
         }
         else
         {
+            // If it is a new host just add the newest msg
             // Insert new host address to map
             mLocalWants.insert(origin, seqNo + 1);
             writeRumor(origin, seqNo, text);
@@ -167,6 +168,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
     QMap<QString, quint32>::const_iterator iter = mLocalWants.constBegin();
     for (; iter != mLocalWants.constEnd(); iter++)
     {
+        // remote status doesn't have keys I have
         if (!remStat.contains(iter.key()))
         {
             qDebug() << "mLocalWants has keys remote doesn't";
@@ -176,6 +178,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
             rumorMsg["ChatText"] = mMessageList[iter.key()][0];
             break;
         }
+        // remote key has smaller seq number than I have
         else if (remStat[iter.key()] < mLocalWants[iter.key()])
         {
             qDebug() << "mLocalWant's sequence number is ahead";
@@ -185,6 +188,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
             rumorMsg["ChatText"] = mMessageList[iter.key()][remStat[iter.key()]];
             break;
         }
+        // remote's sequence number is ahead of mine
         else if (remStat[iter.key()] > mLocalWants[iter.key()])
         {
             qDebug() << "mLocalWant's sequence number is behind";
@@ -199,6 +203,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
         iter = remStat.constBegin();
         for (; iter != remStat.constEnd(); iter++)
         {
+            // remote has keys I don't have
             if (!mLocalWants.contains(iter.key()))
             {
                 qDebug() << "remote has keys mLocalWants doesn;t";
