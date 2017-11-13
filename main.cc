@@ -113,9 +113,9 @@ void ChatDialog::gotReadyRead()
     while(mSocket->hasPendingDatagrams());
 }
 
-void ChatDialog::processMessages(QVariantMap &qMap)
-{
-}
+//void ChatDialog::processMessages(QVariantMap &qMap)
+//{
+//}
 
 void ChatDialog::processRumor(QVariantMap &rMap)
 {
@@ -140,8 +140,9 @@ void ChatDialog::processRumor(QVariantMap &rMap)
         {
             // If it is a new host just add the newest msg
             // Insert new host address to map
-            mLocalWants.insert(origin, seqNo + 1);
-            writeRumor(origin, seqNo, text);
+            //mLocalWants.insert(origin, seqNo + 1);
+            mLocalWants.insert(origin, 0);
+            writeRumor(origin, seqNo, text, false);
         }
         writeStatus(mSocket->recvPort);
     }

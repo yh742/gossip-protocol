@@ -22,7 +22,7 @@ public:
     // Bind this socket to a P2Papp-specific default port.
     bool bind();
     void writeUdp(const QVariantMap &map, int index);
-    bool readUdp(QVariantMap *map);
+    // bool readUdp(QVariantMap *map);
     int genRandNum();
 	int getWritePort();
     ~NetSocket();
@@ -56,7 +56,7 @@ private:
     QMap<QString, QMap<quint32, QString> > mMessageList;
     QMap<QString, quint32> mLocalWants;
     void writeRumor(QString &origin, int seqNo, QString &text, bool append = true);
-    void processMessages(QVariantMap &map);
+    //void processMessages(QVariantMap &map);
 	void processRumor(QVariantMap &map);
     void processStatus(QMap<QString, QMap<QString, quint32> > &map);
 	void appendToMessageList(QVariantMap &map);
