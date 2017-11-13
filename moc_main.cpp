@@ -1,7 +1,7 @@
 /****************************************************************************
 ** Meta object code from reading C++ file 'main.hh'
 **
-** Created: Sun Nov 12 22:00:05 2017
+** Created: Mon Nov 13 11:36:07 2017
 **      by: The Qt Meta Object Compiler version 63 (Qt 4.8.0)
 **
 ** WARNING! All changes made in this file will be lost!

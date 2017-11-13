@@ -71,8 +71,11 @@ void ChatDialog::antiEntropyHandler()
 void ChatDialog::timeoutHandler()
 {
     qDebug() << "TimeoutHandler called";
-    mSocket->writeUdp(mLastMsg, mSocket->sendPort);
-    mTimeoutTimer->start(2000);
+    if (!mLastMsg.isEmpty())
+    {
+        mSocket->writeUdp(mLastMsg, mSocket->sendPort);
+        mTimeoutTimer->start(2000);
+    }
 }
 
 // Slot for receiving messages
@@ -135,6 +138,7 @@ void ChatDialog::processRumor(QVariantMap &rMap)
                 writeRumor(origin, seqNo, text);
 
             }
+            // Discard seen or out of order packets
         }
         else
         {
@@ -207,7 +211,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
             // remote has keys I don't have
             if (!mLocalWants.contains(iter.key()))
             {
-                qDebug() << "remote has keys mLocalWants doesn;t";
+                qDebug() << "remote has keys mLocalWants doesn't";
                 statusFlag = 2;
                 break;
             }
@@ -287,6 +291,7 @@ void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text, bool appe
     qMap["ChatText"] = text;
     qMap["Origin"] = origin;
     qMap["SeqNo"] = seqNo;
+    qDebug() << "Sending Text: " << text;
     // Update tracking variables
     if(append) appendToMessageList(qMap);
     int port = mSocket->getWritePort();
@@ -398,6 +403,7 @@ void NetSocket::writeUdp(const QVariantMap &map, int port)
 // Deserialize and read from UDP socket
 // @param map - pointer to map to store data
 // @return bool - if there is more datagrams to read
+/*
 bool NetSocket::readUdp(QVariantMap* map)
 {
     QByteArray buf(this->pendingDatagramSize(), Qt::Uninitialized);
@@ -416,6 +422,7 @@ bool NetSocket::readUdp(QVariantMap* map)
         return false;
     }
 }
+*/
 
 int main(int argc, char **argv)
 {
