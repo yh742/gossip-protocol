@@ -7,11 +7,11 @@ TARGET =
 DEPENDPATH += .
 INCLUDEPATH += .
 QT += network
-#DEFINES += QT_NO_DEBUG_OUTPUT
-#DEFINES += QT_NO_DEBUG
+DEFINES += QT_NO_DEBUG_OUTPUT
+DEFINES += QT_NO_DEBUG
 # Input
 HEADERS += main.hh
 SOURCES += main.cc
 
 DISTFILES += \
-    Documentation
+    Readme.md

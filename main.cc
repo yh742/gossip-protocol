@@ -213,7 +213,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
         for (; iter != remStat.constEnd(); iter++)
         {
             // remote has keys I don't have
-            if (!mLocalWants.contains(iter.key()))
+            if (mLocalWants.isEmpty() || !mLocalWants.contains(iter.key()))
             {
                 qDebug() << "remote has keys mLocalWants doesn't";
                 statusFlag = 2;
@@ -254,6 +254,10 @@ void ChatDialog::appendToMessageList(QVariantMap &qMap)
     QString origin = qMap["Origin"].toString();
     quint32 seqNo = qMap["SeqNo"].toInt();
     QString text = qMap["ChatText"].toString();
+    if (text.isEmpty())
+    {
+        return;
+    }
     if (mMessageList.contains(origin))
     {
         // host exists in message list already
@@ -345,7 +349,7 @@ void ChatDialog::gotReturnPressed()
 
 int NetSocket::getWritePort()
 {
-    // Determine which port to send to
+    // Determine which port to send tof
     sendPort = myPort == myPortMin ? myPort + 1 :
         myPort == myPortMax ? myPort - 1 :
         (genRandNum() % 2) == 0 ? myPort + 1:
