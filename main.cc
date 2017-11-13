@@ -71,7 +71,7 @@ void ChatDialog::antiEntropyHandler()
 void ChatDialog::timeoutHandler()
 {
     qDebug() << "TimeoutHandler called";
-    if (!mLastMsg.isEmpty())
+    if (!mLastMsg.contains("ChatText"))
     {
         mSocket->writeUdp(mLastMsg, mSocket->sendPort);
         mTimeoutTimer->start(2000);
@@ -173,8 +173,21 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
     QMap<QString, quint32>::const_iterator iter = mLocalWants.constBegin();
     for (; iter != mLocalWants.constEnd(); iter++)
     {
+
+        if (remStat.isEmpty())
+        {
+            qDebug() << "remote is empty";
+            if (mLocalWants.isEmpty())
+            {
+                return;
+            }
+            else
+            {
+                statusFlag = 1;
+            }
+        }
         // remote status doesn't have keys I have
-        if (!remStat.contains(iter.key()))
+        else if (!remStat.contains(iter.key()))
         {
             qDebug() << "mLocalWants has keys remote doesn't";
             statusFlag = 1;
