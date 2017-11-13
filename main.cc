@@ -71,10 +71,10 @@ void ChatDialog::antiEntropyHandler()
 void ChatDialog::timeoutHandler()
 {
     qDebug() << "TimeoutHandler called";
-    if (!mLastMsg.contains("ChatText"))
+    if (!mLastMsg.isEmpty() && mLastMsg.contains("ChatText"))
     {
         mSocket->writeUdp(mLastMsg, mSocket->sendPort);
-        mTimeoutTimer->start(2000);
+        mTimeoutTimer->start(1000);
     }
 }
 
@@ -110,6 +110,7 @@ void ChatDialog::gotReadyRead()
         else
         {
             qDebug() << "Datagram contains neither messages";
+            qDebug() << qMap;
         }
         mTimeoutTimer->stop();
     }
@@ -173,8 +174,7 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
     QMap<QString, quint32>::const_iterator iter = mLocalWants.constBegin();
     for (; iter != mLocalWants.constEnd(); iter++)
     {
-
-        if (remStat.isEmpty())
+        if (remStat.contains("uninit"))
         {
             qDebug() << "remote is empty";
             if (mLocalWants.isEmpty())
@@ -285,17 +285,28 @@ void ChatDialog::appendToMessageList(QVariantMap &qMap)
 void ChatDialog::writeStatus(int port)
 {
     QMap<QString, QMap<QString, quint32> > sMap;
-    sMap.insert("Want", mLocalWants);
+    QMap<QString, quint32> tempMap;
+    if (mLocalWants.isEmpty())
+    {
+        // if we send uninitialized QMap serialization fails completely
+        tempMap.insert("uninit", 0);
+        sMap.insert("Want", tempMap);
+    }
+    else
+    {
+        sMap.insert("Want", mLocalWants);
+    }
     //QVariantMap sMap;
     //sMap.insert("Want", QVariant::fromValue<QIntMap>(mLocalWants));
     QByteArray wBytes;
     QDataStream out(&wBytes, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_4_8);
     out << sMap;
+    qDebug() << "Writing Status: " << sMap;
     mSocket->writeDatagram(wBytes, mSocket->HostAddress, port);
 
     //mSocket->writeUdp(sMap, port);
-    mTimeoutTimer->start(2000);
+    mTimeoutTimer->start(1000);
 }
 
 void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text, bool append)
@@ -311,7 +322,7 @@ void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text, bool appe
     mSocket->writeUdp(qMap, port);
     // Loopback test
     //mSocket->writeUdp(qMap, mSocket->myPort);
-    mTimeoutTimer->start(2000);
+    mTimeoutTimer->start(1000);
     mLastMsg = QVariantMap(qMap);
 }
 
@@ -405,10 +416,15 @@ bool NetSocket::bind()
 // @param map - readonly ref to map to be written
 void NetSocket::writeUdp(const QVariantMap &map, int port)
 {
+    if (map.isEmpty())
+    {
+        return;
+    }
     QByteArray wBytes;
     QDataStream out(&wBytes, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_4_8);
     out << map;
+    qDebug() << "Writing Output UDP: " << map;
     this->writeDatagram(wBytes, HostAddress, port);
 }
 
