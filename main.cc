@@ -7,10 +7,7 @@
 #include <QHostAddress>
 #include <QtGlobal>
 #include <QDateTime>
-
 #include "main.hh"
-typedef QMap<QString,quint32> QIntMap;
-Q_DECLARE_METATYPE(QIntMap);
 
 ChatDialog::ChatDialog()
 {
@@ -59,7 +56,7 @@ ChatDialog::ChatDialog()
     connect(textline, SIGNAL(returnPressed()),
             this, SLOT(gotReturnPressed()));
     connect(mSocket, SIGNAL(readyRead()),
-            this, SLOT(gotReadyRead()));
+            this, SLOT(gotReadyRead()));\
 }
 
 // if timer fires, send out status message
@@ -75,38 +72,49 @@ void ChatDialog::timeoutHandler()
 {
     qDebug() << "TimeoutHandler called";
     mSocket->writeUdp(mLastMsg, mSocket->sendPort);
-    mTimeoutTimer->start(1000);
+    mTimeoutTimer->start(2000);
 }
 
 // Slot for receiving messages
 void ChatDialog::gotReadyRead()
 {
     QVariantMap qMap;
-    bool pending = false;
+    QMap<QString, QMap<QString, quint32> > sMap;
+    QHostAddress sendingAddr;
+    quint16 temPort;
     do
     {
-        pending = mSocket->readUdp(&qMap);
-        processMessages(qMap);
+        //pending = mSocket->readUdp(&qMap);
+        QByteArray buf(mSocket->pendingDatagramSize(), Qt::Uninitialized);
+        mSocket->readDatagram(buf.data(), buf.size(), &sendingAddr, &temPort);
+        QDataStream str(&buf, QIODevice::ReadOnly);
+        mSocket->recvPort = temPort;
+        str >> (qMap);
+        if (qMap.contains("Want"))
+        {
+            QDataStream str2(&buf, QIODevice::ReadOnly);
+            str2 >> (sMap);
+            // received status message stop
+            qDebug() << sMap;
+            qDebug() << "Received a status message";
+            processStatus(sMap);
+        }
+        else if(qMap.contains("ChatText"))
+        {
+            qDebug() << "Received a rumor message";
+            processRumor(qMap);
+        }
+        else
+        {
+            qDebug() << "Datagram contains neither messages";
+        }
+        mTimeoutTimer->stop();
     }
-    while(pending);
+    while(mSocket->hasPendingDatagrams());
 }
 
 void ChatDialog::processMessages(QVariantMap &qMap)
 {
-    if (qMap.contains("Want"))
-    {
-        qDebug() << "Received a status message";
-        processStatus(qMap);
-    }
-    else if(qMap.contains("ChatText"))
-    {
-        qDebug() << "Received a rumor message";
-        processRumor(qMap);
-    }
-    else
-    {
-        qDebug() << "Datagram contains neither messages";
-    }
 }
 
 void ChatDialog::processRumor(QVariantMap &rMap)
@@ -123,28 +131,29 @@ void ChatDialog::processRumor(QVariantMap &rMap)
             // Only append if it is the seqNo we want
             if (seqNo == mLocalWants[origin])
             {
-                appendToMessageList(rMap);
-                writeRumor(origin, seqNo, text);
                 mLocalWants[origin]++;
+                writeRumor(origin, seqNo, text);
+
             }
         }
         else
         {
             // Insert new host address to map
             mLocalWants.insert(origin, seqNo + 1);
-            appendToMessageList(rMap);
             writeRumor(origin, seqNo, text);
         }
+        writeStatus(mSocket->recvPort);
     }
 
     //mTimeoutTimer->stop();
-    writeStatus(mSocket->recvPort);
+    //writeStatus(mSocket->myPort);
 }
 
-void ChatDialog::processStatus(QVariantMap &sMap)
+void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
 {
     QVariantMap rumorMsg;
-    QMap<QString, quint32> remStat = sMap["Wants"].value<QMap<QString, quint32> >();
+    qDebug() << "sMap" << sMap;
+    QMap<QString, quint32> remStat = sMap["Want"];
     qDebug() << remStat;
     qDebug() << mLocalWants;
 
@@ -210,7 +219,7 @@ void ChatDialog::processStatus(QVariantMap &sMap)
                 QString origin = mLastMsg["Origin"].toString();
                 int seqNo = mLastMsg["SeqNo"].toInt();
                 QString text = mLastMsg["ChatText"].toString();
-                writeRumor(origin, seqNo, text);
+                writeRumor(origin, seqNo, text, false);
             }
             break;
         // If status is ahead of remote
@@ -247,29 +256,38 @@ void ChatDialog::appendToMessageList(QVariantMap &qMap)
         tMap.insert(seqNo, text);
         mMessageList.insert(origin, tMap);
     }
+    this->textview->append(origin + ">: " + text);
 }
 
 void ChatDialog::writeStatus(int port)
 {
-    QVariantMap sMap;
-    QVariant var;
-    var.setValue(mLocalWants);
-    sMap["Want"] =  var;
-    mSocket->writeUdp(sMap, port);
-    //mTimeoutTimer->start(1000);
+    QMap<QString, QMap<QString, quint32> > sMap;
+    sMap.insert("Want", mLocalWants);
+    //QVariantMap sMap;
+    //sMap.insert("Want", QVariant::fromValue<QIntMap>(mLocalWants));
+    QByteArray wBytes;
+    QDataStream out(&wBytes, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_4_8);
+    out << sMap;
+    mSocket->writeDatagram(wBytes, mSocket->HostAddress, port);
+
+    //mSocket->writeUdp(sMap, port);
+    mTimeoutTimer->start(2000);
 }
 
-void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text)
+void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text, bool append)
 {
     QVariantMap qMap;
     qMap["ChatText"] = text;
     qMap["Origin"] = origin;
     qMap["SeqNo"] = seqNo;
     // Update tracking variables
-    appendToMessageList(qMap);
+    if(append) appendToMessageList(qMap);
     int port = mSocket->getWritePort();
     mSocket->writeUdp(qMap, port);
-    mTimeoutTimer->start(1000);
+    // Loopback test
+    //mSocket->writeUdp(qMap, mSocket->myPort);
+    mTimeoutTimer->start(2000);
     mLastMsg = QVariantMap(qMap);
 }
 
@@ -278,15 +296,22 @@ void ChatDialog::gotReturnPressed()
 {
 	// Initially, just echo the string locally.
 	// Insert some networking code here...
-	qDebug() << "FIX: send message to other peers: " << textline->text();
-	textview->append(textline->text());
+    // qDebug() << "FIX: send message to other peers: " << textline->text();
 
     // Spread user enetered rumors
     QString origin = mSocket->mOriginName;
     int seqNo = mLocalWants[mSocket->mOriginName];
     QString text = textline->text();
     writeRumor(origin, seqNo, text);
-    mLocalWants[mSocket->mOriginName]++;
+    if (mLocalWants.size() == 0)
+    {
+        mLocalWants[mSocket->mOriginName] = 1;
+    }
+    else
+    {
+        mLocalWants[mSocket->mOriginName]++;
+    }
+    //textview->append(origin + ">: " + textline->text());
 
     // Clear the textline to get ready for the next input message.
     textline->clear();
@@ -324,8 +349,8 @@ NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
 	myPortMax = myPortMin + 3;
 
     // Get host address
-    mHostAddress = QHostAddress(QHostAddress::LocalHost);
-    qDebug() << mHostAddress.toString();
+    HostAddress = QHostAddress(QHostAddress::LocalHost);
+    qDebug() << HostAddress.toString();
     QHostInfo info;
     mOriginName = info.localHostName() + "-" + QString::number(genRandNum());
     qDebug() << mOriginName;
@@ -333,7 +358,7 @@ NetSocket::NetSocket(QObject *parent = NULL) : QUdpSocket(parent)
 
 NetSocket::~NetSocket()
 {
-    //delete mHostAddress;
+    //delete HostAddress;
 }
 
 bool NetSocket::bind()
@@ -360,7 +385,7 @@ void NetSocket::writeUdp(const QVariantMap &map, int port)
     QDataStream out(&wBytes, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_4_8);
     out << map;
-    this->writeDatagram(wBytes, mHostAddress, port);
+    this->writeDatagram(wBytes, HostAddress, port);
 }
 
 

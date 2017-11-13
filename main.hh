@@ -16,6 +16,7 @@ public:
     int myPort;
     int sendPort;   // port where I sent to
     int recvPort;   // port where I received from
+    QHostAddress HostAddress;
     NetSocket(QObject *parent);
     QString mOriginName;
     // Bind this socket to a P2Papp-specific default port.
@@ -28,7 +29,6 @@ public:
 
 private:
     int myPortMin, myPortMax;
-    QHostAddress mHostAddress;
 };
 
 class ChatDialog : public QDialog
@@ -55,10 +55,10 @@ private:
     QVariantMap mLastMsg;
     QMap<QString, QMap<quint32, QString> > mMessageList;
     QMap<QString, quint32> mLocalWants;
-    void writeRumor(QString &origin, int seqNo, QString &text);
+    void writeRumor(QString &origin, int seqNo, QString &text, bool append = true);
     void processMessages(QVariantMap &map);
 	void processRumor(QVariantMap &map);
-	void processStatus(QVariantMap &map);
+    void processStatus(QMap<QString, QMap<QString, quint32> > &map);
 	void appendToMessageList(QVariantMap &map);
 	void writeStatus(int port);
 };
