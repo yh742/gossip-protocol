@@ -169,25 +169,16 @@ void ChatDialog::processStatus(QMap<QString, QMap<QString, quint32> > &sMap)
     // 1 - local has more msgs
     // 2 - remote has more msgs
     int statusFlag = 0;
+    if (remStat.contains("uninit") && mLocalWants.isEmpty())
+    {
+        return;
+    }
 
     // Loop through localwants to see if there is anything missing
     QMap<QString, quint32>::const_iterator iter = mLocalWants.constBegin();
     for (; iter != mLocalWants.constEnd(); iter++)
     {
-        if (remStat.contains("uninit"))
-        {
-            qDebug() << "remote is empty";
-            if (mLocalWants.isEmpty())
-            {
-                return;
-            }
-            else
-            {
-                statusFlag = 1;
-            }
-        }
-        // remote status doesn't have keys I have
-        else if (!remStat.contains(iter.key()))
+        if (remStat.contains("uninit") || !remStat.contains(iter.key()))
         {
             qDebug() << "mLocalWants has keys remote doesn't";
             statusFlag = 1;
