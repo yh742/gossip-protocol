@@ -1,6 +1,7 @@
 CS5450 Lab 3 Peer to Peer Network
 Yu Hsiang Sean Hsu
 yh742@cornell.edu
+I used 1 slip day for this assignment, I still have 1 remaining. 
 
 For a better format please use Google Doc Link
 
