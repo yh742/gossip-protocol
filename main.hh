@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QUdpSocket>
 #include <QTimer>
+#include <QMutex>
 
 
 class NetSocket : public QUdpSocket
@@ -47,6 +48,8 @@ public slots:
     void antiEntropyHandler();
 
 private:
+    QMutex mutex;
+    QMutex mutex2;
 	QTextEdit *textview;
 	QLineEdit *textline;
     NetSocket *mSocket;

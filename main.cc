@@ -7,6 +7,7 @@
 #include <QHostAddress>
 #include <QtGlobal>
 #include <QDateTime>
+#include <QMutex>
 #include "main.hh"
 
 ChatDialog::ChatDialog()
@@ -130,14 +131,16 @@ void ChatDialog::processRumor(QVariantMap &rMap)
     // Only process message that doesn't belong to us
     if (origin != mSocket->mOriginName)
     {
+
         if (mLocalWants.contains(origin))
         {
             // Only append if it is the seqNo we want
             if (seqNo == mLocalWants[origin])
             {
+                mutex2.lock();
                 mLocalWants[origin]++;
+                mutex2.unlock();
                 writeRumor(origin, seqNo, text);
-
             }
             // Discard seen or out of order packets
         }
@@ -146,9 +149,12 @@ void ChatDialog::processRumor(QVariantMap &rMap)
             // If it is a new host just add the newest msg
             // Insert new host address to map
             //mLocalWants.insert(origin, seqNo + 1);
+            mutex2.lock();
             mLocalWants.insert(origin, 0);
+            mutex2.unlock();
             writeRumor(origin, seqNo, text, false);
         }
+
         writeStatus(mSocket->recvPort);
     }
 
@@ -306,19 +312,23 @@ void ChatDialog::writeStatus(int port)
 
 void ChatDialog::writeRumor(QString &origin, int seqNo, QString &text, bool append)
 {
+
     QVariantMap qMap;
     qMap["ChatText"] = text;
     qMap["Origin"] = origin;
     qMap["SeqNo"] = seqNo;
     qDebug() << "Sending Text: " << text;
     // Update tracking variables
+    mutex.lock();
     if(append) appendToMessageList(qMap);
+    mutex.unlock();
     int port = mSocket->getWritePort();
     mSocket->writeUdp(qMap, port);
     // Loopback test
     //mSocket->writeUdp(qMap, mSocket->myPort);
     mTimeoutTimer->start(1000);
     mLastMsg = QVariantMap(qMap);
+
 }
 
 // Slot for enter messages
